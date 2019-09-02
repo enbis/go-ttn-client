@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/hex"
 	"fmt"
 	"os"
 
@@ -39,43 +40,11 @@ func main() {
 	if err != nil {
 		log.WithError(err).Fatal("could not get devices")
 	}
+
 	log.Info("ethtrack: found devices")
 	for _, device := range deviceList {
 		fmt.Printf("- %s", device.DevID)
 	}
-
-	pubsub, err := client.PubSub()
-	if err != nil {
-		log.WithError(err).Fatal("ethtrack: could not get application pub/sub")
-	}
-
-	all := pubsub.AllDevices()
-	defer all.Close()
-	// activations, err := all.SubscribeActivations()
-	// if err != nil {
-	// 	fmt.Println(err)
-	// }
-	// uplinks, err := all.SubscribeUplink()
-	// if err != nil {
-	// 	fmt.Println(err)
-	// }
-	// events, err := all.SubscribeEvents()
-	// if err != nil {
-	// 	fmt.Println(err)
-	// }
-
-	/*
-		for {
-			select {
-			case a := <-activations:
-				fmt.Printf("Activation: %+v\n", a)
-			case u := <-uplinks:
-				fmt.Printf("Uplink: %+v\n", u)
-			case e := <-events:
-				fmt.Printf("Event: %+v\n", e)
-			}
-		}
-	*/
 
 	dev := new(ttnsdk.Device)
 	dev.SparseDevice.AppID = appID
@@ -94,58 +63,69 @@ func main() {
 		log.WithError(err).Fatalf("%s: could not get device", sdkClientName)
 	}
 
-	log.Info("Set device")
-	log.Infof("dev %v", dev)
+	log.Infof("Found dev %v", dev)
 
-	// pubsub, err := client.PubSub()
-	// if err != nil {
-	// 	log.WithError(err).Fatalf("%s: could not get application pub/sub", sdkClientName)
-	// }
+	/*PubSub ret ApplicationPubSub, error
+	* interface ApplicationPubSub
+	*	- Publish
+	*	- Device
+	*	- AllDevices
+	*	- Close
+	 */
+	pubsub, err := client.PubSub()
+	if err != nil {
+		log.WithError(err).Fatal("ethtrack: could not get application pub/sub")
+	}
 
-	// allDevicesPubSub := pubsub.AllDevices()
+	// allDevices := pubsub.AllDevices()
+	// defer allDevices.Close()
 
-	// activations, err := allDevicesPubSub.SubscribeActivations()
+	// activations, err := allDevices.SubscribeActivations()
 	// if err != nil {
 	// 	log.WithError(err).Fatalf("%s: could not subscribe to activations", sdkClientName)
 	// }
-	// go func() {
-	// 	for activation := range activations {
-	// 		log.WithFields(ttnlog.Fields{
-	// 			"appEUI":  activation.AppEUI.String(),
-	// 			"devEUI":  activation.DevEUI.String(),
-	// 			"devAddr": activation.DevAddr.String(),
-	// 		}).Info("my-amazing-app: received activation")
-	// 	}
-	// }()
 
-	// err = allDevicesPubSub.UnsubscribeActivations()
-	// if err != nil {
-	// 	log.WithError(err).Fatalf("%s: could not unsubscribe from activations", sdkClientName)
-	// }
+	devicePubSub := pubsub.Device("dragino-device")
 
-	// myNewDevicePubSub := pubsub.Device("my-new-device")
+	uplinks, err := devicePubSub.SubscribeUplink()
+	if err != nil {
+		fmt.Println(err)
+	}
 
-	// uplink, err := myNewDevicePubSub.SubscribeUplink()
-	// if err != nil {
-	// 	log.WithError(err).Fatalf("%s: could not subscribe to uplink messages", sdkClientName)
-	// }
-	// go func() {
-	// 	for message := range uplink {
-	// 		hexPayload := hex.EncodeToString(message.PayloadRaw)
-	// 		log.WithField("data", hexPayload).Infof("%s: received uplink", sdkClientName)
-	// 	}
-	// }()
+	events, err := devicePubSub.SubscribeEvents()
+	if err != nil {
+		fmt.Println(err)
+	}
 
-	// err = myNewDevicePubSub.UnsubscribeUplink()
-	// if err != nil {
-	// 	log.WithError(err).Fatalf("%s: could not unsubscribe from uplink", sdkClientName)
-	// }
+	go func() {
+		for {
+			select {
+			// case a := <-activations:
+			// 	fmt.Printf("Activation: %+v\n", a)
+			case u := <-uplinks:
+				fmt.Printf("Uplink: %+v\n", u)
+			case e := <-events:
+				s := fmt.Sprintf("%v", e)
+				log.Infof("s from e %v", s)
+				str, err := hex.DecodeString(s)
+				log.Infof("string from s %v", str)
+				if err != nil {
+					log.Fatal("Error conversion")
+				}
+				hexPayload := hex.EncodeToString([]byte(str))
+				fmt.Printf("Event: %+v\n", hexPayload)
+			}
+		}
+	}()
 
-	// err = myNewDevicePubSub.Publish(&types.DownlinkMessage{
-	// 	PayloadRaw: []byte{0xaa, 0xbc},
-	// 	FPort:      10,
-	// })
-	// if err != nil {
-	// 	log.WithError(err).Fatalf("%s: could not schedule downlink message", sdkClientName)
-	// }
+	err = pubsub.Publish("dragino-device", &ttnsdk.DownlinkMessage{
+		AppID:      "dragino-node",
+		DevID:      "dragino-device",
+		PayloadRaw: []byte{0x01, 0x02, 0x03, 0x04},
+	})
+	if err != nil {
+		log.WithError(err).Fatalf("%s: could not schedule downlink message", sdkClientName)
+	}
+
+	select {}
 }
